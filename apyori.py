@@ -9,6 +9,7 @@ import csv
 import argparse
 import json
 import os
+import pdb
 from collections import namedtuple
 from itertools import combinations
 from itertools import chain
@@ -28,7 +29,7 @@ class TransactionManager(object):
     Transaction managers.
     """
 
-    def __init__(self, transactions):
+    def __init__(self, transactions, ivr_collapsed=0):
         """
         Initialize.
 
@@ -39,7 +40,7 @@ class TransactionManager(object):
         self.__num_transaction = 0
         self.__items = []
         self.__transaction_index_map = {}
-
+        self.__ivr_collapsed = ivr_collapsed
         for transaction in transactions:
             self.add_transaction(transaction)
 
@@ -51,6 +52,9 @@ class TransactionManager(object):
             transaction -- A transaction as an iterable object (eg. ['A', 'B']).
         """
         for item in transaction:
+            if self.__ivr_collapsed == 1:
+                if 'ivr_' in item:
+                    item = 'ivr'
             if item not in self.__transaction_index_map:
                 self.__items.append(item)
                 self.__transaction_index_map[item] = set()
@@ -111,14 +115,14 @@ class TransactionManager(object):
         return sorted(self.__items)
 
     @staticmethod
-    def create(transactions):
+    def create(transactions, ivr_collapsed=0):
         """
         Create the TransactionManager with a transaction instance.
         If the given instance is a TransactionManager, this returns itself.
         """
         if isinstance(transactions, TransactionManager):
             return transactions
-        return TransactionManager(transactions)
+        return TransactionManager(transactions, ivr_collapsed)
 
 
 # Ignore name errors because these names are namedtuples.
@@ -203,7 +207,7 @@ def gen_support_records(transaction_manager, min_support, **kwargs):
         candidates = _create_next_candidates(relations, length)
 
 
-def gen_ordered_statistics(transaction_manager, record):
+def gen_ordered_statistics(transaction_manager, record, rhs_filter=None):
     """
     Returns a generator of ordered statistics as OrderedStatistic instances.
 
@@ -215,6 +219,14 @@ def gen_ordered_statistics(transaction_manager, record):
     for combination_set in combinations(sorted(items), len(items) - 1):
         items_base = frozenset(combination_set)
         items_add = frozenset(items.difference(items_base))
+        if rhs_filter:
+            has_filter = False
+            for item in items_add:
+                if rhs_filter in item:
+                    has_filter = True
+                break
+            if not has_filter:
+                continue
         confidence = (
             record.support / transaction_manager.calc_support(items_base))
         lift = confidence / transaction_manager.calc_support(items_add)
@@ -235,7 +247,6 @@ def filter_ordered_statistics(ordered_statistics, **kwargs):
     """
     min_confidence = kwargs.get('min_confidence', 0.0)
     min_lift = kwargs.get('min_lift', 0.0)
-
     for ordered_statistic in ordered_statistics:
         if ordered_statistic.confidence < min_confidence:
             continue
@@ -266,7 +277,8 @@ def apriori(transactions, **kwargs):
     min_confidence = kwargs.get('min_confidence', 0.0)
     min_lift = kwargs.get('min_lift', 0.0)
     max_length = kwargs.get('max_length', None)
-
+    ivr_collapsed = kwargs.get('ivr_collapsed', 0)
+    rhs_filter = kwargs.get('rhs_filter', None)
     # Check arguments.
     if min_support <= 0:
         raise ValueError('minimum support must be > 0')
@@ -280,7 +292,8 @@ def apriori(transactions, **kwargs):
         '_filter_ordered_statistics', filter_ordered_statistics)
 
     # Calculate supports.
-    transaction_manager = TransactionManager.create(transactions)
+    transaction_manager = TransactionManager.create(transactions, ivr_collapsed=ivr_collapsed)
+    print('num_transactions: ' + str(transaction_manager.num_transaction))
     support_records = _gen_support_records(
         transaction_manager, min_support, max_length=max_length)
 
@@ -288,7 +301,7 @@ def apriori(transactions, **kwargs):
     for support_record in support_records:
         ordered_statistics = list(
             _filter_ordered_statistics(
-                _gen_ordered_statistics(transaction_manager, support_record),
+                _gen_ordered_statistics(transaction_manager, support_record, rhs_filter=rhs_filter),
                 min_confidence=min_confidence,
                 min_lift=min_lift,
             )
@@ -352,6 +365,15 @@ def parse_args(argv):
         help='Output format ({0}; default: {1}).'.format(
             ', '.join(output_funcs.keys()), default_output_func_key),
         type=str, choices=output_funcs.keys(), default=default_output_func_key)
+    #added by afshin
+    parser.add_argument(
+        '-ivr', '--ivr-collapsed', metavar='int',
+        help='if should collapse all ivr events into one (default: 0).',
+        type=int, default=0)
+    parser.add_argument(
+        '-rhs', '--rhs-filter', metavar='str',
+        help='If RHS of the rules should have a string (partially matched) (default: no rhs filter)',
+        type=str, default=None)
     args = parser.parse_args(argv)
 
     args.output_func = output_funcs[args.out_format]
@@ -432,7 +454,9 @@ def main(**kwargs):
         transactions,
         max_length=args.max_length,
         min_support=args.min_support,
-        min_confidence=args.min_confidence)
+        min_confidence=args.min_confidence,
+        ivr_collapsed=args.ivr_collapsed,
+        rhs_filter=args.rhs_filter)
     for record in result:
         args.output_func(record, args.output)
 
