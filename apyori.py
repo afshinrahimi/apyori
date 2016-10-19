@@ -184,6 +184,7 @@ def gen_support_records(transaction_manager, min_support, **kwargs):
     """
     # Parse arguments.
     max_length = kwargs.get('max_length')
+    rhs_filter = kwargs.get('rhs_filter', None)
 
     # For testing.
     _create_next_candidates = kwargs.get(
@@ -198,6 +199,14 @@ def gen_support_records(transaction_manager, min_support, **kwargs):
             support = transaction_manager.calc_support(relation_candidate)
             if support < min_support:
                 continue
+            if rhs_filter and length > 1:
+                has_filter = False
+                for item in relation_candidate:
+                    if rhs_filter in item:
+                        has_filter = True
+                    break
+                if not has_filter:
+                    continue
             candidate_set = frozenset(relation_candidate)
             relations.add(candidate_set)
             yield SupportRecord(candidate_set, support)
