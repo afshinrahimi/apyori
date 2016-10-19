@@ -219,7 +219,7 @@ def gen_ordered_statistics(transaction_manager, record, rhs_filter=None):
     for combination_set in combinations(sorted(items), len(items) - 1):
         items_base = frozenset(combination_set)
         items_add = frozenset(items.difference(items_base))
-        if rhs_filter:
+        if rhs_filter and len(items_base) != 0:
             has_filter = False
             for item in items_add:
                 if rhs_filter in item:
