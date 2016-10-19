@@ -304,7 +304,7 @@ def apriori(transactions, **kwargs):
     transaction_manager = TransactionManager.create(transactions, ivr_collapsed=ivr_collapsed)
     print('num_transactions: ' + str(transaction_manager.num_transaction))
     support_records = _gen_support_records(
-        transaction_manager, min_support, max_length=max_length)
+        transaction_manager, min_support, max_length=max_length, rhs_filter=rhs_filter)
 
     # Calculate ordered stats.
     for support_record in support_records:
