@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 """
-a simple implementation of Apriori algorithm by Python.
+ simple implementation of Apriori algorithm by Python.
+ The code is written by __author_email__. I just changed few things
+ to customise it for my work.
 """
 
 import sys
@@ -19,6 +21,7 @@ from itertools import chain
 __version__ = '1.1.1'
 __author__ = 'Yu Mochizuki'
 __author_email__ = 'ymoch.dev@gmail.com'
+global_num_transaction = 0
 
 
 ################################################################################
@@ -29,10 +32,9 @@ class TransactionManager(object):
     Transaction managers.
     """
 
-    def __init__(self, transactions, ivr_collapsed=0):
+    def __init__(self, transactions, item_map=None):
         """
         Initialize.
-
         Arguments:
             transactions -- A transaction iterable object
                             (eg. [['A', 'B'], ['B', 'C']]).
@@ -40,21 +42,20 @@ class TransactionManager(object):
         self.__num_transaction = 0
         self.__items = []
         self.__transaction_index_map = {}
-        self.__ivr_collapsed = ivr_collapsed
+        self.__item_map = item_map
         for transaction in transactions:
             self.add_transaction(transaction)
 
     def add_transaction(self, transaction):
         """
         Add a transaction.
-
         Arguments:
             transaction -- A transaction as an iterable object (eg. ['A', 'B']).
         """
         for item in transaction:
-            if self.__ivr_collapsed == 1:
-                if 'ivr_' in item:
-                    item = 'ivr'
+            if self.__item_map:
+                if self.__item_map in item:
+                    item = self.__item_map
             if item not in self.__transaction_index_map:
                 self.__items.append(item)
                 self.__transaction_index_map[item] = set()
@@ -64,7 +65,6 @@ class TransactionManager(object):
     def calc_support(self, items):
         """
         Returns a support for items.
-
         Arguments:
             items -- Items as an iterable object (eg. ['A', 'B']).
         """
@@ -115,14 +115,14 @@ class TransactionManager(object):
         return sorted(self.__items)
 
     @staticmethod
-    def create(transactions, ivr_collapsed=0):
+    def create(transactions, item_map=None):
         """
         Create the TransactionManager with a transaction instance.
         If the given instance is a TransactionManager, this returns itself.
         """
         if isinstance(transactions, TransactionManager):
             return transactions
-        return TransactionManager(transactions, ivr_collapsed)
+        return TransactionManager(transactions, item_map)
 
 
 # Ignore name errors because these names are namedtuples.
@@ -140,7 +140,6 @@ OrderedStatistic = namedtuple( # pylint: disable=C0103
 def create_next_candidates(prev_candidates, length):
     """
     Returns the apriori candidates as a list.
-
     Arguments:
         prev_candidates -- Previous candidates as a list.
         length -- The lengths of the next candidates.
@@ -174,11 +173,9 @@ def create_next_candidates(prev_candidates, length):
 def gen_support_records(transaction_manager, min_support, **kwargs):
     """
     Returns a generator of support records with given transactions.
-
     Arguments:
         transaction_manager -- Transactions as a TransactionManager instance.
         min_support -- A minimum support (float).
-
     Keyword arguments:
         max_length -- The maximum length of relations (integer).
     """
@@ -219,7 +216,6 @@ def gen_support_records(transaction_manager, min_support, **kwargs):
 def gen_ordered_statistics(transaction_manager, record, rhs_filter=None):
     """
     Returns a generator of ordered statistics as OrderedStatistic instances.
-
     Arguments:
         transaction_manager -- Transactions as a TransactionManager instance.
         record -- A support record as a SupportRecord instance.
@@ -246,10 +242,8 @@ def gen_ordered_statistics(transaction_manager, record, rhs_filter=None):
 def filter_ordered_statistics(ordered_statistics, **kwargs):
     """
     Filter OrderedStatistic objects.
-
     Arguments:
         ordered_statistics -- A OrderedStatistic iterable object.
-
     Keyword arguments:
         min_confidence -- The minimum confidence of relations (float).
         min_lift -- The minimum lift of relations (float).
@@ -270,23 +264,22 @@ def filter_ordered_statistics(ordered_statistics, **kwargs):
 def apriori(transactions, **kwargs):
     """
     Executes Apriori algorithm and returns a RelationRecord generator.
-
     Arguments:
         transactions -- A transaction iterable object
                         (eg. [['A', 'B'], ['B', 'C']]).
-
     Keyword arguments:
         min_support -- The minimum support of relations (float).
         min_confidence -- The minimum confidence of relations (float).
         min_lift -- The minimum lift of relations (float).
         max_length -- The maximum length of the relation (integer).
     """
+    global global_num_transaction
     # Parse the arguments.
     min_support = kwargs.get('min_support', 0.1)
     min_confidence = kwargs.get('min_confidence', 0.0)
     min_lift = kwargs.get('min_lift', 0.0)
     max_length = kwargs.get('max_length', None)
-    ivr_collapsed = kwargs.get('ivr_collapsed', 0)
+    item_map = kwargs.get('item_map', None)
     rhs_filter = kwargs.get('rhs_filter', None)
     # Check arguments.
     if min_support <= 0:
@@ -301,8 +294,9 @@ def apriori(transactions, **kwargs):
         '_filter_ordered_statistics', filter_ordered_statistics)
 
     # Calculate supports.
-    transaction_manager = TransactionManager.create(transactions, ivr_collapsed=ivr_collapsed)
+    transaction_manager = TransactionManager.create(transactions, item_map=item_map)
     print('num_transactions: ' + str(transaction_manager.num_transaction))
+    global_num_transaction = transaction_manager.num_transaction
     support_records = _gen_support_records(
         transaction_manager, min_support, max_length=max_length, rhs_filter=rhs_filter)
 
@@ -327,15 +321,15 @@ def apriori(transactions, **kwargs):
 def parse_args(argv):
     """
     Parse commandline arguments.
-
     Arguments:
         argv -- An argument list without the program name.
     """
     output_funcs = {
         'json': dump_as_json,
         'tsv': dump_as_two_item_tsv,
+        'tsvall': dump_as_tsv,
     }
-    default_output_func_key = 'json'
+    default_output_func_key = 'tsvall'
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -376,9 +370,9 @@ def parse_args(argv):
         type=str, choices=output_funcs.keys(), default=default_output_func_key)
     #added by afshin
     parser.add_argument(
-        '-ivr', '--ivr-collapsed', metavar='int',
-        help='if should collapse all ivr events into one (default: 0).',
-        type=int, default=0)
+        '-im', '--item-map', metavar='str',
+        help='if should map all events containing the given string into that string (e.g. ivr_3923 => ivr (default: None).',
+        type=str, default=None)
     parser.add_argument(
         '-rhs', '--rhs-filter', metavar='str',
         help='If RHS of the rules should have a string (partially matched) (default: no rhs filter)',
@@ -392,10 +386,8 @@ def parse_args(argv):
 def load_transactions(input_file, **kwargs):
     """
     Load transactions and returns a generator for transactions.
-
     Arguments:
         input_file -- An input file.
-
     Keyword arguments:
         delimiter -- The delimiter of the transaction.
     """
@@ -404,10 +396,9 @@ def load_transactions(input_file, **kwargs):
         yield transaction if transaction else ['']
 
 
-def dump_as_json(record, output_file):
+def dump_as_json(record, output_file, num_transaction=0):
     """
     Dump an relation record as a json value.
-
     Arguments:
         record -- A RelationRecord instance to dump.
         output_file -- A file to output.
@@ -428,10 +419,9 @@ def dump_as_json(record, output_file):
     output_file.write(os.linesep)
 
 
-def dump_as_two_item_tsv(record, output_file):
+def dump_as_two_item_tsv(record, output_file, num_transaction=0):
     """
     Dump a relation record as TSV only for 2 item relations.
-
     Arguments:
         record -- A RelationRecord instance to dump.
         output_file -- A file to output.
@@ -446,6 +436,18 @@ def dump_as_two_item_tsv(record, output_file):
             record.support, ordered_stats.confidence, ordered_stats.lift,
             os.linesep))
 
+def dump_as_tsv(record, output_file, num_transaction=0):
+    """
+    Dump a relation record as TSV for all relations.
+    Arguments:
+        record -- A RelationRecord instance to dump.
+        output_file -- A file to output.
+    """
+    for ordered_stats in record.ordered_statistics:
+        output_file.write('{0}\t{1}\t{2:.8f}\t{3:.0f}\t{4:.8f}\t{5:.8f}{6}'.format(
+            '|'.join(list(ordered_stats.items_base)), '|'.join(list(ordered_stats.items_add)),
+            record.support, record.support * num_transaction, ordered_stats.confidence, ordered_stats.lift,
+            os.linesep))
 
 def main(**kwargs):
     """
@@ -464,10 +466,10 @@ def main(**kwargs):
         max_length=args.max_length,
         min_support=args.min_support,
         min_confidence=args.min_confidence,
-        ivr_collapsed=args.ivr_collapsed,
+        item_map=args.item_map,
         rhs_filter=args.rhs_filter)
     for record in result:
-        args.output_func(record, args.output)
+        args.output_func(record, args.output, num_transation=global_num_transaction)
 
 
 if __name__ == '__main__':
